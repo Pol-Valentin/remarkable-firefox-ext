@@ -60,17 +60,24 @@ test("a refused request fails with its HTTP status", async () => {
   await assert.rejects(userToken("revoked"), { status: 401, message: "Jeton reMarkable refusé : HTTP 401 unauthorized" });
 });
 
-test("a sync read that gets no answer within 15 s gives up with a clear error", async (t) => {
-  const delays = [];
-  t.mock.method(AbortSignal, "timeout", (ms) => {
-    delays.push(ms);
-    return AbortSignal.abort(new DOMException("The operation was aborted due to timeout", "TimeoutError"));
-  });
-  globalThis.fetch = async (url, { signal }) => {
-    signal.throwIfAborted();
-    return new Response("{}");
-  };
+for (const [name, call, delay] of [
+  ["pairing", () => registerDevice("abcdefgh"), 15000],
+  ["the user token", () => userToken("device-token"), 15000],
+  ["a sync read", () => syncGet("user-token", "/sync/v4/root"), 15000],
+  ["the upload", () => uploadEpub("user-token", "T", new Uint8Array(1)), 120000],
+]) {
+  test(`${name} gives up with a clear error when the cloud does not answer in ${delay / 1000} s`, async (t) => {
+    const delays = [];
+    t.mock.method(AbortSignal, "timeout", (ms) => {
+      delays.push(ms);
+      return AbortSignal.abort(new DOMException("The operation was aborted due to timeout", "TimeoutError"));
+    });
+    globalThis.fetch = async (url, { signal }) => {
+      signal.throwIfAborted();
+      return new Response("{}");
+    };
 
-  await assert.rejects(syncGet("user-token", "/sync/v4/root"), { message: "Le cloud reMarkable ne répond pas." });
-  assert.deepEqual(delays, [15000]);
-});
+    await assert.rejects(call(), { message: "Le cloud reMarkable ne répond pas." });
+    assert.deepEqual(delays, [delay]);
+  });
+}
