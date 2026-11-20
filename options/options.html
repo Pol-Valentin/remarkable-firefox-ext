@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Envoyer sur reMarkable</title>
+<style>
+  body { font: 15px/1.5 system-ui, sans-serif; max-width: 34rem; margin: 2rem auto; padding: 0 1rem; color: #222; }
+  h1 { font-size: 1.4rem; }
+  section { border: 1px solid #ddd; border-radius: 8px; padding: 1rem 1.2rem; margin: 1rem 0; }
+  input { font: inherit; padding: .4rem .6rem; width: 9rem; text-transform: lowercase; letter-spacing: .1em; }
+  button { font: inherit; padding: .4rem .9rem; cursor: pointer; }
+  .ok { color: #2e7d32; }
+  .error { color: #c62828; }
+  [hidden] { display: none; }
+</style>
+</head>
+<body>
+<h1>Envoyer sur reMarkable</h1>
+
+<section id="paired" hidden>
+  <p class="ok">✓ Extension appairée à ton compte reMarkable.</p>
+  <p>Clique sur l'icône de la barre d'outils, ou fais un clic droit sur la page, pour envoyer l'article.</p>
+  <button id="unpair">Désappairer</button>
+</section>
+
+<section id="pairing" hidden>
+  <p>1. Ouvre <a href="https://my.remarkable.com/device/browser/connect" target="_blank" rel="noopener">my.remarkable.com/device/browser/connect</a> et récupère le code à 8 lettres.</p>
+  <p>2. Colle-le ici :</p>
+  <form id="pair-form">
+    <input id="code" maxlength="8" autocomplete="off" required>
+    <button type="submit">Appairer</button>
+  </form>
+</section>
+
+<section id="permission" hidden>
+  <p>L'extension a besoin d'accéder aux sites pour lire les articles et récupérer leurs images.</p>
+  <button id="grant">Autoriser</button>
+</section>
+
+<p id="status" role="status"></p>
+<script type="module" src="options.js"></script>
+</body>
+</html>

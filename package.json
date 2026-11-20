@@ -1,0 +1,15 @@
+{
+  "name": "remarkable-firefox-ext",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/",
+    "lint": "npx web-ext lint --ignore-files 'test/**' 'package.json'",
+    "build": "npx web-ext build --overwrite-dest --ignore-files 'test/**' 'package.json'",
+    "sign": "npx web-ext sign --channel=unlisted --ignore-files 'test/**' 'package.json'"
+  },
+  "devDependencies": {
+    "jsdom": "^31.0.1"
+  }
+}
