@@ -14,11 +14,12 @@
   clone.querySelectorAll("img").forEach((img, i) => {
     const live = liveImages[i];
     const source =
-      live?.currentSrc ||
       img.getAttribute("data-src") ||
       img.getAttribute("data-lazy-src") ||
       img.getAttribute("data-original") ||
-      largestFromSrcset(img.getAttribute("data-srcset") || img.getAttribute("srcset")) ||
+      largestFromSrcset(img.getAttribute("data-srcset")) ||
+      live?.currentSrc ||
+      largestFromSrcset(img.getAttribute("srcset")) ||
       largestFromSrcset(img.closest("picture")?.querySelector("source")?.getAttribute("srcset")) ||
       img.getAttribute("src");
     const url = source && absolute(source);

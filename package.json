@@ -5,11 +5,12 @@
   "type": "module",
   "scripts": {
     "test": "node --test test/",
-    "lint": "npx web-ext lint",
-    "build": "npx web-ext build --overwrite-dest",
-    "sign": "npx web-ext sign --channel=unlisted"
+    "lint": "web-ext lint",
+    "build": "web-ext build --overwrite-dest",
+    "sign": "web-ext sign --channel=unlisted"
   },
   "devDependencies": {
-    "jsdom": "^31.0.1"
+    "jsdom": "^31.0.1",
+    "web-ext": "10.8.0"
   }
 }

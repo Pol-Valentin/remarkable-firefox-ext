@@ -21,9 +21,10 @@ const PAGE = `<!doctype html><html lang="fr"><head><title>Un article | Le Site</
   <h1>Un article</h1>
   ${[1, 2, 3].map(paragraph).join("")}
   <p>Voir <a href="/autre-page">la suite</a> ou <a href="javascript:alert(1)">ceci</a>.</p>
-  <figure><img data-src="/img/lazy.jpg" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="Paresseuse"><figcaption>Légende</figcaption></figure>
+  <figure><img data-src="/img/lazy.jpg" src="/img/placeholder.gif" alt="Paresseuse"><figcaption>Légende</figcaption></figure>
   <picture><source srcset="/img/pic.webp 1x, /img/pic@2x.webp 2x"><img alt="Picture"></picture>
   <img src="https://cdn.example.org/broken.png" alt="Cassée">
+  <!-- commentaire -- piégé -->
   <p>Un <my-widget class="x">élément inconnu</my-widget> et un caractère \u0007 de contrôle.</p>
   <svg><circle r="4"/></svg>
   <iframe src="https://youtube.com/embed/x"></iframe>
@@ -34,6 +35,11 @@ const PAGE = `<!doctype html><html lang="fr"><head><title>Un article | Le Site</
 
 function extractFrom(html, url) {
   const dom = new JSDOM(html, { url, runScripts: "outside-only" });
+  Object.defineProperty(dom.window.HTMLImageElement.prototype, "currentSrc", {
+    get() {
+      return this.src;
+    },
+  });
   dom.window.eval(readability);
   return { article: dom.window.eval(extractor), window: dom.window };
 }
@@ -76,7 +82,7 @@ test("conversion keeps text and safe links, embeds images and drops the rest", a
   assert.match(bodyXhtml, /<a href="https:\/\/blog.example.com\/autre-page">la suite<\/a>/);
   assert.match(bodyXhtml, /ou ceci\./);
   assert.match(bodyXhtml, /Un élément inconnu et/);
-  assert.doesNotMatch(bodyXhtml, /javascript|my-widget|<svg|<iframe|<script|tracker|class=/);
+  assert.doesNotMatch(bodyXhtml, /javascript|my-widget|<svg|<iframe|<script|tracker|class=|<!--|piégé/);
 });
 
 test("the resulting book page is well formed XHTML", async () => {
@@ -96,6 +102,11 @@ test("the resulting book page is well formed XHTML", async () => {
   execFileSync("unzip", ["-q", join(dir, "b.epub"), "-d", join(dir, "x")]);
   execFileSync("xmllint", ["--noout", join(dir, "x/OEBPS/article.xhtml")]);
   assert.doesNotMatch(readFileSync(join(dir, "x/OEBPS/article.xhtml"), "utf8"), /\u0007/);
+});
+
+test("an HTML comment holding a double hyphen is dropped", async () => {
+  const { bodyXhtml } = await toXhtml("<p>avant<!-- a -- b -->après</p>", async () => null);
+  assert.match(bodyXhtml, /^<p[^>]*>avantaprès<\/p>$/);
 });
 
 test("a page without an article returns an explicit error", () => {

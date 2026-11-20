@@ -12,12 +12,21 @@ const ALLOWED_ATTRIBUTES = {
   ol: ["start"],
 };
 const MAX_IMAGES = 60;
+const SHOW_COMMENT = 0x80;
 
 function unwrap(el) {
   el.replaceWith(...el.childNodes);
 }
 
+function removeComments(root) {
+  const walker = root.ownerDocument.createTreeWalker(root, SHOW_COMMENT);
+  const comments = [];
+  while (walker.nextNode()) comments.push(walker.currentNode);
+  comments.forEach((comment) => comment.remove());
+}
+
 function sanitize(root) {
+  removeComments(root);
   root.querySelectorAll(DROPPED_TAGS).forEach((el) => el.remove());
   for (const el of [...root.querySelectorAll("*")].reverse()) {
     const tag = el.localName;

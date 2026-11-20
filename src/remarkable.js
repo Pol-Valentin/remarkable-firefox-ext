@@ -3,7 +3,7 @@ const UPLOAD_HOST = "https://internal.cloud.remarkable.com";
 
 async function expectOk(response, what) {
   const body = await response.text();
-  if (!response.ok) throw new Error(`${what} : HTTP ${response.status} ${body}`.trim());
+  if (!response.ok) throw Object.assign(new Error(`${what} : HTTP ${response.status} ${body}`.trim()), { status: response.status });
   return body;
 }
 
