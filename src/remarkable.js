@@ -16,7 +16,7 @@ export async function registerDevice(code) {
   return expectOk(response, "Appairage refusé");
 }
 
-async function userToken(deviceToken) {
+export async function userToken(deviceToken) {
   const response = await fetch(`${AUTH_HOST}/token/json/2/user/new`, {
     method: "POST",
     headers: { Authorization: `Bearer ${deviceToken}` },
@@ -24,8 +24,7 @@ async function userToken(deviceToken) {
   return expectOk(response, "Jeton reMarkable refusé");
 }
 
-export async function uploadEpub(deviceToken, fileName, bytes) {
-  const token = await userToken(deviceToken);
+export async function uploadEpub(token, fileName, bytes) {
   const meta = new TextEncoder().encode(JSON.stringify({ file_name: fileName })).toBase64();
   const response = await fetch(`${UPLOAD_HOST}/doc/v2/files`, {
     method: "POST",
@@ -37,5 +36,5 @@ export async function uploadEpub(deviceToken, fileName, bytes) {
     },
     body: bytes,
   });
-  return JSON.parse(await expectOk(response, "Envoi refusé"));
+  await expectOk(response, "Envoi refusé");
 }

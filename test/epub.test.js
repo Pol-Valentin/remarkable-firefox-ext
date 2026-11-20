@@ -22,7 +22,7 @@ function extract(bytes) {
 const book = () =>
   buildEpub({
     id: "urn:uuid:0b4d6a3e-6a2f-4a8e-9a57-6a0a7f1b2c3d",
-    title: "Les « bons » & <mauvais> titres",
+    title: "Les « bons » & <mauvais> titres\u0001",
     author: "Ada & Co",
     lang: "fr",
     source: "https://example.com/a?b=1&c=2",
@@ -31,8 +31,9 @@ const book = () =>
     images: [{ href: "images/img-0.png", mediaType: "image/png", data: PNG_1PX }],
   });
 
-test("every XML file of the book is well formed", () => {
-  const root = extract(book());
+const root = extract(book());
+
+test("every XML file of the book is well formed, even with a control character in the title", () => {
   const files = [
     "META-INF/container.xml",
     "OEBPS/content.opf",
@@ -44,7 +45,6 @@ test("every XML file of the book is well formed", () => {
 });
 
 test("the package lists the article, the stylesheet and every image in the manifest and spine", () => {
-  const root = extract(book());
   const opf = readFileSync(join(root, "OEBPS/content.opf"), "utf8");
 
   assert.match(opf, /<dc:title>Les « bons » &amp; &lt;mauvais&gt; titres<\/dc:title>/);
@@ -56,7 +56,6 @@ test("the package lists the article, the stylesheet and every image in the manif
 });
 
 test("the article page carries the title, the source link and the body", () => {
-  const root = extract(book());
   const page = readFileSync(join(root, "OEBPS/article.xhtml"), "utf8");
 
   assert.match(page, /<h1>Les « bons » &amp; &lt;mauvais&gt; titres<\/h1>/);

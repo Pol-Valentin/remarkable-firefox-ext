@@ -11,7 +11,6 @@ function crc32(bytes) {
 }
 
 const UTF8_FLAG = 0x0800;
-const DOS_TIME = 0;
 const DOS_DATE = (2020 - 1980) << 9 | 1 << 5 | 1;
 
 export function createZip(entries) {
@@ -30,14 +29,11 @@ export function createZip(entries) {
     lv.setUint32(0, 0x04034b50, true);
     lv.setUint16(4, 10, true);
     lv.setUint16(6, UTF8_FLAG, true);
-    lv.setUint16(8, 0, true);
-    lv.setUint16(10, DOS_TIME, true);
     lv.setUint16(12, DOS_DATE, true);
     lv.setUint32(14, crc, true);
     lv.setUint32(18, data.length, true);
     lv.setUint32(22, data.length, true);
     lv.setUint16(26, name.length, true);
-    lv.setUint16(28, 0, true);
     local.set(name, 30);
 
     const central = new Uint8Array(46 + name.length);
@@ -46,8 +42,6 @@ export function createZip(entries) {
     cv.setUint16(4, 20, true);
     cv.setUint16(6, 10, true);
     cv.setUint16(8, UTF8_FLAG, true);
-    cv.setUint16(10, 0, true);
-    cv.setUint16(12, DOS_TIME, true);
     cv.setUint16(14, DOS_DATE, true);
     cv.setUint32(16, crc, true);
     cv.setUint32(20, data.length, true);

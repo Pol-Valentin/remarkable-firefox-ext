@@ -12,7 +12,6 @@ const ALLOWED_ATTRIBUTES = {
   ol: ["start"],
 };
 const MAX_IMAGES = 60;
-const INVALID_XML_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F￾￿]/g;
 
 function unwrap(el) {
   el.replaceWith(...el.childNodes);
@@ -34,21 +33,19 @@ function sanitize(root) {
 }
 
 async function embedImages(root, fetchImage) {
+  const urls = [...new Set([...root.querySelectorAll("img")].map((img) => img.getAttribute("src")))].slice(0, MAX_IMAGES);
+  const fetched = await Promise.all(urls.map((url) => fetchImage(url).catch(() => null)));
   const images = [];
-  const byUrl = new Map();
+  const hrefByUrl = new Map();
+  urls.forEach((url, i) => {
+    const image = fetched[i];
+    if (!image) return;
+    const href = `images/img-${images.length}.${image.mediaType === "image/png" ? "png" : "jpg"}`;
+    images.push({ href, ...image });
+    hrefByUrl.set(url, href);
+  });
   for (const img of root.querySelectorAll("img")) {
-    const url = img.getAttribute("src");
-    if (!byUrl.has(url)) {
-      const image = images.length < MAX_IMAGES ? await fetchImage(url).catch(() => null) : null;
-      if (image) {
-        const href = `images/img-${images.length}.${image.mediaType === "image/png" ? "png" : "jpg"}`;
-        images.push({ href, ...image });
-        byUrl.set(url, href);
-      } else {
-        byUrl.set(url, null);
-      }
-    }
-    const href = byUrl.get(url);
+    const href = hrefByUrl.get(img.getAttribute("src"));
     if (href) img.setAttribute("src", href);
     else img.remove();
   }
@@ -59,10 +56,7 @@ export async function toXhtml(html, fetchImage) {
   const doc = new DOMParser().parseFromString(html, "text/html");
   sanitize(doc.body);
   const images = await embedImages(doc.body, fetchImage);
-  const serialized = new XMLSerializer().serializeToString(doc.body);
-  const bodyXhtml = serialized
-    .replace(/^<body[^>]*>/, "")
-    .replace(/<\/body>$/, "")
-    .replace(INVALID_XML_CHARS, "");
+  const serializer = new XMLSerializer();
+  const bodyXhtml = [...doc.body.childNodes].map((node) => serializer.serializeToString(node)).join("");
   return { bodyXhtml, images };
 }

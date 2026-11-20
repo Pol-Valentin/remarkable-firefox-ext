@@ -38,7 +38,10 @@ function extractFrom(html, url) {
   return { article: dom.window.eval(extractor), window: dom.window };
 }
 
-async function convert() {
+let converted;
+const convert = () => (converted ??= runConversion());
+
+async function runConversion() {
   const { article, window } = extractFrom(PAGE, "https://blog.example.com/posts/un-article");
   globalThis.DOMParser = window.DOMParser;
   globalThis.XMLSerializer = window.XMLSerializer;
@@ -73,7 +76,7 @@ test("conversion keeps text and safe links, embeds images and drops the rest", a
   assert.match(bodyXhtml, /<a href="https:\/\/blog.example.com\/autre-page">la suite<\/a>/);
   assert.match(bodyXhtml, /ou ceci\./);
   assert.match(bodyXhtml, /Un élément inconnu et/);
-  assert.doesNotMatch(bodyXhtml, /javascript|my-widget|<svg|<iframe|<script|tracker|class=|\u0007/);
+  assert.doesNotMatch(bodyXhtml, /javascript|my-widget|<svg|<iframe|<script|tracker|class=/);
 });
 
 test("the resulting book page is well formed XHTML", async () => {
@@ -92,6 +95,7 @@ test("the resulting book page is well formed XHTML", async () => {
   writeFileSync(join(dir, "b.epub"), epub);
   execFileSync("unzip", ["-q", join(dir, "b.epub"), "-d", join(dir, "x")]);
   execFileSync("xmllint", ["--noout", join(dir, "x/OEBPS/article.xhtml")]);
+  assert.doesNotMatch(readFileSync(join(dir, "x/OEBPS/article.xhtml"), "utf8"), /\u0007/);
 });
 
 test("a page without an article returns an explicit error", () => {

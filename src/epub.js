@@ -2,7 +2,11 @@ import { createZip } from "./zip.js";
 
 const XML_ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" };
 
-export const escapeXml = (s) => String(s).replace(/[&<>"']/g, (c) => XML_ESCAPES[c]);
+const INVALID_XML_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]|\p{Surrogate}/gu;
+
+const xmlSafe = (s) => String(s).replace(INVALID_XML_CHARS, "");
+
+export const escapeXml = (s) => xmlSafe(s).replace(/[&<>"']/g, (c) => XML_ESCAPES[c]);
 
 const STYLE = `body { font-family: serif; line-height: 1.5; margin: 0 4%; }
 h1 { font-size: 1.6em; line-height: 1.2; margin-bottom: 0.3em; }
@@ -35,7 +39,7 @@ ${body}
 export function buildEpub({ id, title, author, lang, source, modified, bodyXhtml, images }) {
   const t = escapeXml(title);
   const stamp = modified.toISOString().replace(/\.\d{3}Z$/, "Z");
-  const meta = [author, source].filter(Boolean).map((v) => escapeXml(v)).join("<br/>");
+  const meta = [author, source].filter(Boolean).map(escapeXml).join("<br/>");
 
   const container = `<?xml version="1.0" encoding="UTF-8"?>
 <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
@@ -91,7 +95,7 @@ ${imageItems}
   const article = xhtmlPage({
     title,
     lang,
-    body: `<h1>${t}</h1>\n${meta ? `<p class="meta">${meta}</p>\n` : ""}${bodyXhtml}`,
+    body: `<h1>${t}</h1>\n${meta ? `<p class="meta">${meta}</p>\n` : ""}${xmlSafe(bodyXhtml)}`,
   });
 
   return createZip([

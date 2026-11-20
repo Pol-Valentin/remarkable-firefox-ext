@@ -1,11 +1,6 @@
 (() => {
-  const absolute = (value) => {
-    try {
-      return new URL(value, document.baseURI).href;
-    } catch {
-      return null;
-    }
-  };
+  const MIN_ARTICLE_LENGTH = 100;
+  const absolute = (value) => URL.parse(value, document.baseURI)?.href;
 
   const largestFromSrcset = (srcset) =>
     srcset
@@ -38,7 +33,6 @@
     else a.removeAttribute("href");
   });
 
-  const MIN_ARTICLE_LENGTH = 100;
   const article = new Readability(clone).parse();
   if (!article?.content || article.textContent.trim().length < MIN_ARTICLE_LENGTH) return { error: "Aucun article détecté sur cette page." };
 
