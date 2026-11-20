@@ -60,9 +60,11 @@ export async function send(tab) {
 
   await badge(tab.id, "…", "#666");
   const token = userToken(deviceToken);
-  const parent = token.then((t) => resolveParent(t, folder));
+  const parent = token.then((t) => resolveParent(t, folder)).then(
+    (id) => ({ id }),
+    () => ({ id: "", unchecked: true }),
+  );
   token.catch(() => {});
-  parent.catch(() => {});
   try {
     const article = await extract(tab.id);
     const { bodyXhtml, images } = await toXhtml(article.content, (url) => fetchImage(url, (src) => fetchFromPage(tab.id, src)));
@@ -77,11 +79,12 @@ export async function send(tab) {
       images,
     });
     const destination = await parent;
-    await uploadEpub(await token, article.title, epub, destination);
+    await uploadEpub(await token, article.title, epub, destination.id);
     await badge(tab.id, "✓", "#2e7d32");
     setTimeout(() => browser.action.setBadgeText({ tabId: tab.id, text: "" }), 4000);
-    if (folder && !destination) {
-      await notify("Article envoyé à la racine", `Le dossier « ${folder.path} » n'existe plus : l'article est à la racine.`);
+    if (folder && !destination.id) {
+      const reason = destination.unchecked ? "n'a pas pu être vérifié" : "n'existe plus";
+      await notify("Article envoyé à la racine", `Le dossier « ${folder.path} » ${reason} : l'article est à la racine.`);
     }
   } catch (error) {
     const expired = error.status === 401;

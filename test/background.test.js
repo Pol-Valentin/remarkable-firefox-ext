@@ -80,3 +80,13 @@ test("a chosen folder that was trashed sends the article to the root and says so
   assert.deepEqual(cloud.uploads.map((u) => u.meta), [{ file_name: "T" }]);
   assert.deepEqual(events, ["notify Le dossier « Jeté / Sous jeté » n'existe plus : l'article est à la racine."]);
 });
+
+test("when the chosen folder cannot be checked the article still goes to the root and says so", async () => {
+  state.folder = { id: "f-recettes", path: "Perso / Recettes" };
+  globalThis.fetch = async (url, init) =>
+    new URL(url).pathname.startsWith("/sync/") ? new Response("panne", { status: 503 }) : cloud.fetch(url, init);
+
+  await send({ id: 1 });
+  assert.deepEqual(cloud.uploads.map((u) => u.meta), [{ file_name: "T" }]);
+  assert.deepEqual(events, ["notify Le dossier « Perso / Recettes » n'a pas pu être vérifié : l'article est à la racine."]);
+});

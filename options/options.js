@@ -3,6 +3,7 @@ import { registerDevice, userToken } from "../src/remarkable.js";
 
 const ALL_SITES = { origins: ["<all_urls>"] };
 const $ = (id) => document.getElementById(id);
+let loading = 0;
 
 function status(text, kind = "") {
   $("status").textContent = text;
@@ -14,25 +15,34 @@ function fillFolders(folders, selectedId) {
   $("folder").replaceChildren(new Option("Racine", ""), ...options);
 }
 
-async function loadFolders(deviceToken, folder) {
+async function loadFolders(deviceToken, folder, folderCache) {
+  const run = loading;
   const select = $("folder");
   select.disabled = true;
   fillFolders(folder ? [folder] : [], folder?.id);
   try {
-    const folders = await listFolders(await userToken(deviceToken));
-    const current = folders.find(({ id }) => id === folder?.id);
-    fillFolders(folders, current?.id);
+    const list = await listFolders(await userToken(deviceToken), folderCache);
+    if (run !== loading) return;
+    const current = list.folders.find(({ id }) => id === folder?.id);
+    fillFolders(list.folders, current?.id);
     if (folder && !current) status(`Le dossier « ${folder.path} » n'existe plus : les articles iront à la racine.`, "error");
-    if (current && current.path !== folder.path) await browser.storage.local.set({ folder: current });
+    await browser.storage.local.set({ folderCache: list, ...(current && current.path !== folder.path && { folder: current }) });
   } catch (error) {
+    if (run !== loading) return;
+    if (error.status === 401) {
+      await browser.storage.local.remove(["deviceToken", "folderCache"]);
+      status("L'appairage a expiré : saisis un nouveau code ci-dessous.", "error");
+      return render();
+    }
     status(`Impossible de lire tes dossiers : ${error.message}`, "error");
   }
   select.disabled = false;
 }
 
 async function render() {
-  const [{ deviceToken, folder }, allSites] = await Promise.all([
-    browser.storage.local.get(["deviceToken", "folder"]),
+  const run = ++loading;
+  const [{ deviceToken, folder, folderCache }, allSites] = await Promise.all([
+    browser.storage.local.get(["deviceToken", "folder", "folderCache"]),
     browser.permissions.contains(ALL_SITES),
   ]);
   const showDestination = Boolean(deviceToken) && allSites;
@@ -40,7 +50,7 @@ async function render() {
   $("pairing").hidden = Boolean(deviceToken);
   $("permission").hidden = allSites;
   $("destination").hidden = !showDestination;
-  if (showDestination) await loadFolders(deviceToken, folder);
+  if (showDestination && run === loading) await loadFolders(deviceToken, folder, folderCache);
 }
 
 $("folder").addEventListener("change", async () => {
@@ -67,7 +77,7 @@ $("pair-form").addEventListener("submit", async (event) => {
 });
 
 $("unpair").addEventListener("click", async () => {
-  await browser.storage.local.remove(["deviceToken", "folder"]);
+  await browser.storage.local.remove(["deviceToken", "folder", "folderCache"]);
   status("Extension désappairée.");
   render();
 });

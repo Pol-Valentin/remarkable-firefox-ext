@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 const sha256 = (text) => createHash("sha256").update(text).digest("hex");
 
-export function fakeCloud(items) {
+export function fakeCloud(items, { rootVersion = 4 } = {}) {
   const files = new Map();
   const store = (name, text) => {
     const hash = sha256(name + text);
@@ -10,18 +10,20 @@ export function fakeCloud(items) {
     return hash;
   };
 
-  const rootLines = items.map(({ id, schema = 4, ...metadata }) => {
+  const rootLines = items.map(({ id, schema = 4, withoutMetadata, ...metadata }) => {
     const meta = store(`${id}.metadata`, JSON.stringify({ pinned: false, ...metadata }));
     const content = store(`${id}.content`, "{}");
-    const subfiles = [`${meta}:0:${id}.metadata:0:100`, `${content}:0:${id}.content:0:2`];
+    const subfiles = [...(withoutMetadata ? [] : [`${meta}:0:${id}.metadata:0:100`]), `${content}:0:${id}.content:0:2`];
     const index = schema === 3 ? `3\n${subfiles.join("\n")}\n` : `4\n0:${id}:2:102\n${subfiles.join("\n")}\n`;
     return `${store(`${id}.docSchema`, index)}:0:${id}:2:102`;
   });
-  const rootHash = store("root.docSchema", `4\n0:.:${rootLines.length}:0\n${rootLines.join("\n")}\n`);
+  const rootHash = store("root.docSchema", `${rootVersion}\n0:.:${rootLines.length}:0\n${rootLines.join("\n")}\n`);
 
   const uploads = [];
+  const requests = [];
   const fetch = async (url, { method = "GET", headers = {}, body } = {}) => {
     const { pathname } = new URL(url);
+    requests.push(pathname);
     if (pathname === "/token/json/2/user/new") return new Response("user-token");
     if (headers.Authorization !== "Bearer user-token") return new Response("unauthorized", { status: 401 });
     if (method === "GET" && pathname === "/sync/v4/root") {
@@ -39,7 +41,7 @@ export function fakeCloud(items) {
     }
     return new Response("not found", { status: 404 });
   };
-  return { fetch, uploads };
+  return { fetch, uploads, requests };
 }
 
 export const LIBRARY = [
@@ -55,4 +57,5 @@ export const LIBRARY = [
   { id: "f-orphelin", type: "CollectionType", visibleName: "Orphelin", parent: "disparu" },
   { id: "d-todo", type: "DocumentType", visibleName: "Todo", parent: "" },
   { id: "d-article", type: "DocumentType", visibleName: "Un article", parent: "f-alire" },
+  { id: "d-incomplet", withoutMetadata: true },
 ];
