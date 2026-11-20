@@ -1,7 +1,7 @@
 import { toXhtml } from "./article.js";
 import { buildEpub } from "./epub.js";
 import { fetchImage } from "./images.js";
-import { folderPath } from "./folders.js";
+import { resolveParent } from "./folders.js";
 import { uploadEpub, userToken } from "./remarkable.js";
 
 const ALL_SITES = { origins: ["<all_urls>"] };
@@ -60,7 +60,7 @@ export async function send(tab) {
 
   await badge(tab.id, "…", "#666");
   const token = userToken(deviceToken);
-  const parent = folder ? token.then((t) => folderPath(t, folder.id)).then((path) => (path ? folder.id : "")) : Promise.resolve("");
+  const parent = token.then((t) => resolveParent(t, folder));
   token.catch(() => {});
   parent.catch(() => {});
   try {

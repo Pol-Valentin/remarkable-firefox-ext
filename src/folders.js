@@ -1,13 +1,6 @@
-import { expectOk } from "./remarkable.js";
+import { syncGet } from "./remarkable.js";
 
-const SYNC_HOST = "https://eu.tectonic.remarkable.com";
-
-async function get(token, path, fileName) {
-  const response = await fetch(`${SYNC_HOST}${path}`, {
-    headers: { Authorization: `Bearer ${token}`, ...(fileName && { "rm-filename": fileName }) },
-  });
-  return expectOk(response, "Lecture des dossiers refusée");
-}
+const collator = new Intl.Collator("fr");
 
 function parseIndex(text) {
   const [version, ...lines] = text.trimEnd().split("\n");
@@ -18,14 +11,14 @@ function parseIndex(text) {
 }
 
 async function readRoot(token) {
-  const { hash } = JSON.parse(await get(token, "/sync/v4/root"));
-  return parseIndex(await get(token, `/sync/v3/files/${hash}`, "root.docSchema"));
+  const { hash } = JSON.parse(await syncGet(token, "/sync/v4/root"));
+  return parseIndex(await syncGet(token, `/sync/v3/files/${hash}`, "root.docSchema"));
 }
 
 async function readMetadata(token, { id, hash }) {
-  const files = parseIndex(await get(token, `/sync/v3/files/${hash}`, `${id}.docSchema`));
+  const files = parseIndex(await syncGet(token, `/sync/v3/files/${hash}`, `${id}.docSchema`));
   const metadata = files.find((file) => file.id === `${id}.metadata`);
-  return JSON.parse(await get(token, `/sync/v3/files/${metadata.hash}`, metadata.id));
+  return JSON.parse(await syncGet(token, `/sync/v3/files/${metadata.hash}`, metadata.id));
 }
 
 async function pathOf(id, metadataOf) {
@@ -47,10 +40,14 @@ export async function listFolders(token) {
   const metadata = new Map(await Promise.all(entries.map(async (entry) => [entry.id, await readMetadata(token, entry)])));
   const folderIds = [...metadata].filter(([, meta]) => meta.type === "CollectionType").map(([id]) => id);
   const folders = await Promise.all(folderIds.map(async (id) => ({ id, path: await pathOf(id, async (key) => metadata.get(key)) })));
-  return folders.filter((folder) => folder.path).sort((a, b) => a.path.localeCompare(b.path, "fr"));
+  return folders.filter((folder) => folder.path).sort((a, b) => collator.compare(a.path, b.path));
 }
 
 export async function folderPath(token, id) {
   const entries = new Map((await readRoot(token)).map((entry) => [entry.id, entry]));
-  return pathOf(id, async (key) => entries.has(key) && readMetadata(token, entries.get(key)));
+  return pathOf(id, async (key) => (entries.has(key) ? readMetadata(token, entries.get(key)) : null));
+}
+
+export async function resolveParent(token, folder) {
+  return folder && (await folderPath(token, folder.id)) ? folder.id : "";
 }

@@ -9,17 +9,19 @@ function status(text, kind = "") {
   $("status").className = kind;
 }
 
-const ROOT = () => new Option("Racine", "");
+function fillFolders(folders, selectedId) {
+  const options = folders.map(({ id, path }) => new Option(path, id, false, id === selectedId));
+  $("folder").replaceChildren(new Option("Racine", ""), ...options);
+}
 
-async function loadFolders(deviceToken) {
+async function loadFolders(deviceToken, folder) {
   const select = $("folder");
-  const { folder } = await browser.storage.local.get("folder");
   select.disabled = true;
-  select.replaceChildren(ROOT(), ...(folder ? [new Option(folder.path, folder.id, true, true)] : []));
+  fillFolders(folder ? [folder] : [], folder?.id);
   try {
     const folders = await listFolders(await userToken(deviceToken));
     const current = folders.find(({ id }) => id === folder?.id);
-    select.replaceChildren(ROOT(), ...folders.map(({ id, path }) => new Option(path, id, false, id === current?.id)));
+    fillFolders(folders, current?.id);
     if (folder && !current) status(`Le dossier « ${folder.path} » n'existe plus : les articles iront à la racine.`, "error");
     if (current && current.path !== folder.path) await browser.storage.local.set({ folder: current });
   } catch (error) {
@@ -29,13 +31,16 @@ async function loadFolders(deviceToken) {
 }
 
 async function render() {
-  const { deviceToken } = await browser.storage.local.get("deviceToken");
-  const allSites = await browser.permissions.contains(ALL_SITES);
+  const [{ deviceToken, folder }, allSites] = await Promise.all([
+    browser.storage.local.get(["deviceToken", "folder"]),
+    browser.permissions.contains(ALL_SITES),
+  ]);
+  const showDestination = Boolean(deviceToken) && allSites;
   $("paired").hidden = !deviceToken;
   $("pairing").hidden = Boolean(deviceToken);
   $("permission").hidden = allSites;
-  $("destination").hidden = !deviceToken || !allSites;
-  if (deviceToken && allSites) await loadFolders(deviceToken);
+  $("destination").hidden = !showDestination;
+  if (showDestination) await loadFolders(deviceToken, folder);
 }
 
 $("folder").addEventListener("change", async () => {

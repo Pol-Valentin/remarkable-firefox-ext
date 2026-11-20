@@ -1,7 +1,8 @@
 const AUTH_HOST = "https://webapp-prod.cloud.remarkable.engineering";
 const UPLOAD_HOST = "https://internal.cloud.remarkable.com";
+const SYNC_HOST = "https://eu.tectonic.remarkable.com";
 
-export async function expectOk(response, what) {
+async function expectOk(response, what) {
   const body = await response.text();
   if (!response.ok) throw Object.assign(new Error(`${what} : HTTP ${response.status} ${body}`.trim()), { status: response.status });
   return body;
@@ -37,4 +38,11 @@ export async function uploadEpub(token, fileName, bytes, parent) {
     body: bytes,
   });
   await expectOk(response, "Envoi refusé");
+}
+
+export async function syncGet(token, path, fileName) {
+  const response = await fetch(`${SYNC_HOST}${path}`, {
+    headers: { Authorization: `Bearer ${token}`, ...(fileName && { "rm-filename": fileName }) },
+  });
+  return expectOk(response, "Lecture des dossiers refusée");
 }
