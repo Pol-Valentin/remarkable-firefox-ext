@@ -1,6 +1,7 @@
 const AUTH_HOST = "https://webapp-prod.cloud.remarkable.engineering";
 const UPLOAD_HOST = "https://internal.cloud.remarkable.com";
 const SYNC_HOST = "https://eu.tectonic.remarkable.com";
+const SYNC_TIMEOUT = 15000;
 
 async function expectOk(response, what) {
   const body = await response.text();
@@ -41,8 +42,14 @@ export async function uploadEpub(token, fileName, bytes, parent) {
 }
 
 export async function syncGet(token, path, fileName) {
-  const response = await fetch(`${SYNC_HOST}${path}`, {
-    headers: { Authorization: `Bearer ${token}`, ...(fileName && { "rm-filename": fileName }) },
-  });
-  return expectOk(response, "Lecture des dossiers refusée");
+  try {
+    const response = await fetch(`${SYNC_HOST}${path}`, {
+      headers: { Authorization: `Bearer ${token}`, ...(fileName && { "rm-filename": fileName }) },
+      signal: AbortSignal.timeout(SYNC_TIMEOUT),
+    });
+    return await expectOk(response, "Lecture des dossiers refusée");
+  } catch (error) {
+    if (error.name === "TimeoutError") throw new Error("Le cloud reMarkable ne répond pas.");
+    throw error;
+  }
 }

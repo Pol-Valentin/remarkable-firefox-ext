@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { registerDevice, userToken, uploadEpub } from "../src/remarkable.js";
+import { registerDevice, syncGet, userToken, uploadEpub } from "../src/remarkable.js";
 
 function serve(status, body) {
   const requests = [];
@@ -58,4 +58,19 @@ test("a refused request fails with its HTTP status", async () => {
   serve(401, "unauthorized");
 
   await assert.rejects(userToken("revoked"), { status: 401, message: "Jeton reMarkable refusé : HTTP 401 unauthorized" });
+});
+
+test("a sync read that gets no answer within 15 s gives up with a clear error", async (t) => {
+  const delays = [];
+  t.mock.method(AbortSignal, "timeout", (ms) => {
+    delays.push(ms);
+    return AbortSignal.abort(new DOMException("The operation was aborted due to timeout", "TimeoutError"));
+  });
+  globalThis.fetch = async (url, { signal }) => {
+    signal.throwIfAborted();
+    return new Response("{}");
+  };
+
+  await assert.rejects(syncGet("user-token", "/sync/v4/root"), { message: "Le cloud reMarkable ne répond pas." });
+  assert.deepEqual(delays, [15000]);
 });
