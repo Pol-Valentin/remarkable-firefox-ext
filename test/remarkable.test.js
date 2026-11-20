@@ -46,6 +46,14 @@ test("the upload sends the book with its name encoded as UTF-8 JSON in base64", 
   assert.equal(body, bytes);
 });
 
+test("the upload names the destination folder when there is one", async () => {
+  const requests = serve(200, '{"docID":"1","hash":"h"}');
+
+  await uploadEpub("user-token", "Titre", new Uint8Array(), "f-alire");
+  const meta = JSON.parse(new TextDecoder().decode(Uint8Array.fromBase64(requests[0].headers["rm-meta"])));
+  assert.deepEqual(meta, { file_name: "Titre", parent: "f-alire" });
+});
+
 test("a refused request fails with its HTTP status", async () => {
   serve(401, "unauthorized");
 

@@ -1,7 +1,7 @@
 const AUTH_HOST = "https://webapp-prod.cloud.remarkable.engineering";
 const UPLOAD_HOST = "https://internal.cloud.remarkable.com";
 
-async function expectOk(response, what) {
+export async function expectOk(response, what) {
   const body = await response.text();
   if (!response.ok) throw Object.assign(new Error(`${what} : HTTP ${response.status} ${body}`.trim()), { status: response.status });
   return body;
@@ -24,8 +24,8 @@ export async function userToken(deviceToken) {
   return expectOk(response, "Jeton reMarkable refusé");
 }
 
-export async function uploadEpub(token, fileName, bytes) {
-  const meta = new TextEncoder().encode(JSON.stringify({ file_name: fileName })).toBase64();
+export async function uploadEpub(token, fileName, bytes, parent) {
+  const meta = new TextEncoder().encode(JSON.stringify({ file_name: fileName, ...(parent && { parent }) })).toBase64();
   const response = await fetch(`${UPLOAD_HOST}/doc/v2/files`, {
     method: "POST",
     headers: {

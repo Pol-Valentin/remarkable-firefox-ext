@@ -1,6 +1,7 @@
 import { toXhtml } from "./article.js";
 import { buildEpub } from "./epub.js";
 import { fetchImage } from "./images.js";
+import { folderPath } from "./folders.js";
 import { uploadEpub, userToken } from "./remarkable.js";
 
 const ALL_SITES = { origins: ["<all_urls>"] };
@@ -20,6 +21,10 @@ browser.contextMenus.onClicked.addListener((_, tab) => send(tab));
 async function badge(tabId, text, color) {
   await browser.action.setBadgeBackgroundColor({ tabId, color });
   await browser.action.setBadgeText({ tabId, text });
+}
+
+function notify(title, message) {
+  return browser.notifications.create({ type: "basic", iconUrl: browser.runtime.getURL("icons/icon.svg"), title, message });
 }
 
 async function extract(tabId) {
@@ -47,7 +52,7 @@ async function fetchFromPage(tabId, url) {
 }
 
 export async function send(tab) {
-  const { deviceToken } = await browser.storage.local.get("deviceToken");
+  const { deviceToken, folder } = await browser.storage.local.get(["deviceToken", "folder"]);
   if (!deviceToken || !(await browser.permissions.contains(ALL_SITES))) {
     await browser.runtime.openOptionsPage();
     return;
@@ -55,7 +60,9 @@ export async function send(tab) {
 
   await badge(tab.id, "…", "#666");
   const token = userToken(deviceToken);
+  const parent = folder ? token.then((t) => folderPath(t, folder.id)).then((path) => (path ? folder.id : "")) : Promise.resolve("");
   token.catch(() => {});
+  parent.catch(() => {});
   try {
     const article = await extract(tab.id);
     const { bodyXhtml, images } = await toXhtml(article.content, (url) => fetchImage(url, (src) => fetchFromPage(tab.id, src)));
@@ -69,9 +76,13 @@ export async function send(tab) {
       bodyXhtml,
       images,
     });
-    await uploadEpub(await token, article.title, epub);
+    const destination = await parent;
+    await uploadEpub(await token, article.title, epub, destination);
     await badge(tab.id, "✓", "#2e7d32");
     setTimeout(() => browser.action.setBadgeText({ tabId: tab.id, text: "" }), 4000);
+    if (folder && !destination) {
+      await notify("Article envoyé à la racine", `Le dossier « ${folder.path} » n'existe plus : l'article est à la racine.`);
+    }
   } catch (error) {
     const expired = error.status === 401;
     if (expired) {
@@ -79,11 +90,6 @@ export async function send(tab) {
       await browser.runtime.openOptionsPage();
     }
     await badge(tab.id, "!", "#c62828");
-    await browser.notifications.create({
-      type: "basic",
-      iconUrl: browser.runtime.getURL("icons/icon.svg"),
-      title: "Échec de l'envoi sur reMarkable",
-      message: expired ? PAIRING_EXPIRED : error.message,
-    });
+    await notify("Échec de l'envoi sur reMarkable", expired ? PAIRING_EXPIRED : error.message);
   }
 }

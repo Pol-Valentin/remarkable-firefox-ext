@@ -8,6 +8,7 @@
   h1 { font-size: 1.4rem; }
   section { border: 1px solid #ddd; border-radius: 8px; padding: 1rem 1.2rem; margin: 1rem 0; }
   input { font: inherit; padding: .4rem .6rem; width: 9rem; text-transform: lowercase; letter-spacing: .1em; }
+  select { font: inherit; padding: .3rem; display: block; margin-top: .4rem; max-width: 100%; }
   button { font: inherit; padding: .4rem .9rem; cursor: pointer; }
   .ok { color: #2e7d32; }
   .error { color: #c62828; }
@@ -21,6 +22,11 @@
   <p class="ok">✓ Extension appairée à ton compte reMarkable.</p>
   <p>Clique sur l'icône de la barre d'outils, ou fais un clic droit sur la page, pour envoyer l'article.</p>
   <button id="unpair">Désappairer</button>
+</section>
+
+<section id="destination" hidden>
+  <label for="folder">Dossier de destination sur la tablette</label>
+  <select id="folder"></select>
 </section>
 
 <section id="pairing" hidden>
