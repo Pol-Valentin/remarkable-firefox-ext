@@ -59,15 +59,15 @@ async function fetchFromPage(tabId, url) {
 
 function loaded(tabId) {
   return new Promise((resolve, reject) => {
-    const done = (outcome) => {
+    const settle = (finish, value) => {
       clearTimeout(timer);
       browser.tabs.onUpdated.removeListener(onUpdated);
-      outcome();
+      finish(value);
     };
-    const timer = setTimeout(() => done(() => reject(new Error("La page du lien ne s'est pas chargée à temps."))), LINK_TIMEOUT);
-    const onUpdated = (id, change) => id === tabId && change.status === "complete" && done(resolve);
-    browser.tabs.onUpdated.addListener(onUpdated);
-    browser.tabs.get(tabId).then((tab) => tab.status === "complete" && done(resolve), (error) => done(() => reject(error)));
+    const timer = setTimeout(() => settle(reject, new Error("La page du lien ne s'est pas chargée à temps.")), LINK_TIMEOUT);
+    const onUpdated = (_, change) => change.status === "complete" && settle(resolve);
+    browser.tabs.onUpdated.addListener(onUpdated, { tabId, properties: ["status"] });
+    browser.tabs.get(tabId).then((tab) => tab.status === "complete" && settle(resolve), (error) => settle(reject, error));
   });
 }
 
@@ -80,7 +80,7 @@ async function settings() {
 
 export async function send(tab) {
   const config = await settings();
-  if (config) await deliver(config, tab.id, tab.id);
+  if (config) await deliver(config, tab.id);
 }
 
 export async function sendLink(url, origin) {
@@ -89,15 +89,25 @@ export async function sendLink(url, origin) {
   const tab = await browser.tabs.create({ url, active: false });
   try {
     await loaded(tab.id);
+    await deliver(config, tab.id, origin.id);
   } catch (error) {
-    await notify("Échec de l'envoi sur reMarkable", error.message);
-    return browser.tabs.remove(tab.id);
+    await fail(origin.id, error);
+  } finally {
+    await browser.tabs.remove(tab.id);
   }
-  await deliver(config, tab.id, origin.id);
-  await browser.tabs.remove(tab.id);
 }
 
-async function deliver({ deviceToken, folder }, pageTabId, badgeTabId) {
+async function fail(badgeTabId, error) {
+  const expired = error.status === 401;
+  if (expired) {
+    await browser.storage.local.remove("deviceToken");
+    await browser.runtime.openOptionsPage();
+  }
+  await badge(badgeTabId, "!", "#c62828");
+  await notify("Échec de l'envoi sur reMarkable", expired ? PAIRING_EXPIRED : error.message);
+}
+
+async function deliver({ deviceToken, folder }, pageTabId, badgeTabId = pageTabId) {
   await badge(badgeTabId, "…", "#666");
   const token = userToken(deviceToken);
   const parent = token.then((t) => resolveParent(t, folder)).then(
@@ -127,12 +137,6 @@ async function deliver({ deviceToken, folder }, pageTabId, badgeTabId) {
       await notify("Article envoyé à la racine", `Le dossier « ${folder.path} » ${reason} : l'article est à la racine.`);
     }
   } catch (error) {
-    const expired = error.status === 401;
-    if (expired) {
-      await browser.storage.local.remove("deviceToken");
-      await browser.runtime.openOptionsPage();
-    }
-    await badge(badgeTabId, "!", "#c62828");
-    await notify("Échec de l'envoi sur reMarkable", expired ? PAIRING_EXPIRED : error.message);
+    await fail(badgeTabId, error);
   }
 }

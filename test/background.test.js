@@ -11,7 +11,7 @@ let state;
 let events;
 let tabStatus;
 const listeners = {};
-const listener = (name) => ({ addListener: (fn) => (listeners[name] = fn), removeListener: () => delete listeners[name] });
+const listener = (name) => ({ addListener: (fn, filter) => ((listeners[name] = fn), (listeners[`${name} filter`] = filter)), removeListener: () => delete listeners[name] });
 globalThis.browser = {
   runtime: { onInstalled: listener("installed"), openOptionsPage: async () => events.push("options"), getURL: (path) => path },
   action: {
@@ -124,6 +124,7 @@ test("a link opens in a background tab, its article goes to the tablet and the t
 
   assert.deepEqual(cloud.uploads.map((u) => u.meta), [{ file_name: "T" }]);
   assert.deepEqual(events, ["open https://example.com/a inactive", "badge 1 …", "read 2", "badge 1 ✓", "close 2"]);
+  assert.deepEqual(listeners["updated filter"], { tabId: 2, properties: ["status"] });
 });
 
 test("a link whose tab is already loaded is sent without waiting", async () => {
@@ -141,6 +142,7 @@ test("a link that never finishes loading is given up after 30 s and its tab is c
   await sending;
 
   assert.equal(cloud.uploads.length, 0);
+  assert.ok(events.includes("badge 1 !"));
   assert.deepEqual(outcome(), [
     "open https://example.com/lent inactive",
     "notify La page du lien ne s'est pas chargée à temps.",
