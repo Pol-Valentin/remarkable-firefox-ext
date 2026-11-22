@@ -1,0 +1,48 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  sign:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 26
+          cache: npm
+
+      - run: npm ci
+
+      - name: Check that the tag matches the manifest version
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          version=$(node -p 'require("./manifest.json").version')
+          if [ "${TAG#v}" != "$version" ]; then
+            echo "::error::Le tag $TAG ne correspond pas à la version $version du manifest.json"
+            exit 1
+          fi
+
+      - run: npm test
+
+      - run: npm run lint
+
+      - name: Sign on addons.mozilla.org
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.WEB_EXT_API_KEY }}
+          WEB_EXT_API_SECRET: ${{ secrets.WEB_EXT_API_SECRET }}
+        run: npm run sign -- --approval-timeout 3600000
+
+      - name: Attach the signed file to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$TAG" web-ext-artifacts/*.xpi
