@@ -7,7 +7,7 @@
     "test": "node --test test/",
     "lint": "web-ext lint",
     "build": "web-ext build --overwrite-dest",
-    "sign": "web-ext sign --channel=unlisted"
+    "sign": "web-ext sign --channel=unlisted --approval-timeout 3600000"
   },
   "devDependencies": {
     "jsdom": "^31.0.1",
