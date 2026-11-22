@@ -7,6 +7,8 @@ import { uploadEpub, userToken } from "./remarkable.js";
 const ALL_SITES = { origins: ["<all_urls>"] };
 const PAIRING_EXPIRED = "L'appairage a expiré : saisis un nouveau code dans les options.";
 const LINK_TIMEOUT = 30000;
+const POLL_INTERVAL = 1000;
+const EXTRACT_ATTEMPTS = 8;
 
 browser.runtime.onInstalled.addListener(() => {
   browser.contextMenus.create({
@@ -18,6 +20,7 @@ browser.runtime.onInstalled.addListener(() => {
     id: "send-link",
     title: "Envoyer le lien sur reMarkable",
     contexts: ["link"],
+    targetUrlPatterns: ["http://*/*", "https://*/*"],
   });
 });
 
@@ -25,9 +28,13 @@ browser.action.onClicked.addListener((tab) => send(tab));
 browser.contextMenus.onClicked.addListener((info, tab) => (info.menuItemId === "send-link" ? sendLink(info.linkUrl, tab) : send(tab)));
 
 async function badge(tabId, text, color) {
-  await browser.action.setBadgeBackgroundColor({ tabId, color });
-  await browser.action.setBadgeText({ tabId, text });
+  try {
+    await browser.action.setBadgeBackgroundColor({ tabId, color });
+    await browser.action.setBadgeText({ tabId, text });
+  } catch {}
 }
+
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function notify(title, message) {
   return browser.notifications.create({ type: "basic", iconUrl: browser.runtime.getURL("icons/icon.svg"), title, message });
@@ -57,18 +64,29 @@ async function fetchFromPage(tabId, url) {
   return result;
 }
 
-function loaded(tabId) {
-  return new Promise((resolve, reject) => {
-    const settle = (finish, value) => {
-      clearTimeout(timer);
-      browser.tabs.onUpdated.removeListener(onUpdated);
-      finish(value);
-    };
-    const timer = setTimeout(() => settle(reject, new Error("La page du lien ne s'est pas chargée à temps.")), LINK_TIMEOUT);
-    const onUpdated = (_, change) => change.status === "complete" && settle(resolve);
-    browser.tabs.onUpdated.addListener(onUpdated, { tabId, properties: ["status"] });
-    browser.tabs.get(tabId).then((tab) => tab.status === "complete" && settle(resolve), (error) => settle(reject, error));
-  });
+async function loaded(tabId) {
+  for (let waited = 0; waited < LINK_TIMEOUT; waited += POLL_INTERVAL) {
+    const tab = await browser.tabs.get(tabId);
+    if (tab.status === "complete" && tab.url) return;
+    await pause(POLL_INTERVAL);
+  }
+  throw new Error("La page du lien ne s'est pas chargée à temps.");
+}
+
+async function extractPatiently(tabId) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await extract(tabId);
+    } catch (error) {
+      if (attempt === EXTRACT_ATTEMPTS) throw error;
+      await pause(POLL_INTERVAL);
+    }
+  }
+}
+
+async function closeIfHidden(tabId) {
+  const tab = await browser.tabs.get(tabId).catch(() => null);
+  if (tab && !tab.active) await browser.tabs.remove(tabId);
 }
 
 async function settings() {
@@ -80,20 +98,21 @@ async function settings() {
 
 export async function send(tab) {
   const config = await settings();
-  if (config) await deliver(config, tab.id);
+  if (config) await deliver(config, { pageTabId: tab.id });
 }
 
 export async function sendLink(url, origin) {
   const config = await settings();
   if (!config) return;
-  const tab = await browser.tabs.create({ url, active: false });
+  let tab;
   try {
+    tab = await browser.tabs.create({ url, active: false });
     await loaded(tab.id);
-    await deliver(config, tab.id, origin.id);
+    await deliver(config, { pageTabId: tab.id, badgeTabId: origin.id, read: extractPatiently });
   } catch (error) {
     await fail(origin.id, error);
   } finally {
-    await browser.tabs.remove(tab.id);
+    if (tab) await closeIfHidden(tab.id);
   }
 }
 
@@ -107,7 +126,7 @@ async function fail(badgeTabId, error) {
   await notify("Échec de l'envoi sur reMarkable", expired ? PAIRING_EXPIRED : error.message);
 }
 
-async function deliver({ deviceToken, folder }, pageTabId, badgeTabId = pageTabId) {
+async function deliver({ deviceToken, folder }, { pageTabId, badgeTabId = pageTabId, read = extract }) {
   await badge(badgeTabId, "…", "#666");
   const token = userToken(deviceToken);
   const parent = token.then((t) => resolveParent(t, folder)).then(
@@ -116,7 +135,7 @@ async function deliver({ deviceToken, folder }, pageTabId, badgeTabId = pageTabI
   );
   token.catch(() => {});
   try {
-    const article = await extract(pageTabId);
+    const article = await read(pageTabId);
     const { bodyXhtml, images } = await toXhtml(article.content, (url) => fetchImage(url, (src) => fetchFromPage(pageTabId, src)));
     const epub = buildEpub({
       id: `urn:uuid:${crypto.randomUUID()}`,
@@ -131,7 +150,7 @@ async function deliver({ deviceToken, folder }, pageTabId, badgeTabId = pageTabI
     const destination = await parent;
     await uploadEpub(await token, article.title, epub, destination.id);
     await badge(badgeTabId, "✓", "#2e7d32");
-    setTimeout(() => browser.action.setBadgeText({ tabId: badgeTabId, text: "" }), 4000);
+    setTimeout(() => browser.action.setBadgeText({ tabId: badgeTabId, text: "" }).catch(() => {}), 4000);
     if (folder && !destination.id) {
       const reason = destination.unchecked ? "n'a pas pu être vérifié" : "n'existe plus";
       await notify("Article envoyé à la racine", `Le dossier « ${folder.path} » ${reason} : l'article est à la racine.`);

@@ -9,21 +9,31 @@ globalThis.XMLSerializer = window.XMLSerializer;
 
 let state;
 let events;
-let tabStatus;
+let tabStates;
+let pages;
 const listeners = {};
 const listener = (name) => ({ addListener: (fn, filter) => ((listeners[name] = fn), (listeners[`${name} filter`] = filter)), removeListener: () => delete listeners[name] });
 globalThis.browser = {
   runtime: { onInstalled: listener("installed"), openOptionsPage: async () => events.push("options"), getURL: (path) => path },
   action: {
     onClicked: listener("action"),
-    setBadgeText: async ({ tabId, text }) => text && events.push(`badge ${tabId} ${text}`),
+    setBadgeText: async ({ tabId, text }) => {
+      if (state.closedTabs?.includes(tabId)) throw new Error(`Invalid tab ID: ${tabId}`);
+      if (text) events.push(`badge ${tabId} ${text}`);
+    },
     setBadgeBackgroundColor: async () => {},
   },
-  contextMenus: { onClicked: listener("menu"), create: (item) => events.push(`menu ${item.id} ${item.contexts}`) },
+  contextMenus: {
+    onClicked: listener("menu"),
+    create: (item) => events.push(`menu ${item.id} ${item.contexts}${item.targetUrlPatterns ? ` ${item.targetUrlPatterns}` : ""}`),
+  },
   tabs: {
-    onUpdated: listener("updated"),
-    create: async ({ url, active }) => (events.push(`open ${url} ${active ? "active" : "inactive"}`), { id: 2, status: "loading" }),
-    get: async (id) => ({ id, status: tabStatus }),
+    create: async ({ url, active }) => {
+      if (state.createError) throw new Error(state.createError);
+      events.push(`open ${url} ${active ? "active" : "inactive"}`);
+      return { id: 2, status: "loading", active };
+    },
+    get: async (id) => ({ id, active: false, ...(tabStates.length > 1 ? tabStates.shift() : tabStates[0]) }),
     remove: async (id) => events.push(`close ${id}`),
   },
   storage: {
@@ -36,7 +46,7 @@ globalThis.browser = {
   scripting: {
     executeScript: async ({ target }) => {
       events.push(`read ${target.tabId}`);
-      return [{ result: { title: "T", content: "<p>Texte</p>", url: "https://example.com/", lang: "fr" } }];
+      return [{ result: pages.length > 1 ? pages.shift() : pages[0] }];
     },
   },
   notifications: { create: async ({ message }) => events.push(`notify ${message}`) },
@@ -44,6 +54,8 @@ globalThis.browser = {
 
 const { send } = await import("../src/background.js");
 
+const ARTICLE = { title: "T", content: "<p>Texte</p>", url: "https://example.com/", lang: "fr" };
+const NO_ARTICLE = { error: "Aucun article détecté sur cette page." };
 const outcome = () => events.filter((event) => !/^(badge|read) /.test(event));
 
 let cloud;
@@ -51,7 +63,8 @@ mock.timers.enable({ apis: ["setTimeout"] });
 
 beforeEach(() => {
   events = [];
-  tabStatus = "loading";
+  tabStates = [{ status: "complete", url: "https://example.com/a" }];
+  pages = [ARTICLE];
   state = { deviceToken: "device-token", allSites: true };
   cloud = fakeCloud(LIBRARY);
   globalThis.fetch = cloud.fetch;
@@ -111,35 +124,50 @@ test("when the chosen folder cannot be checked the article still goes to the roo
   assert.deepEqual(outcome(), ["notify Le dossier « Perso / Recettes » n'a pas pu être vérifié : l'article est à la racine."]);
 });
 
-test("the context menu offers to send the page, a selection or a link", () => {
+test("the context menu offers to send the page, a selection or a web link", () => {
   listeners.installed();
-  assert.deepEqual(events, ["menu send-to-remarkable page,selection", "menu send-link link"]);
+  assert.deepEqual(events, ["menu send-to-remarkable page,selection", "menu send-link link http://*/*,https://*/*"]);
 });
 
+const sendLink = (url = "https://example.com/a") => drive(listeners.menu({ menuItemId: "send-link", linkUrl: url }, { id: 1 }));
+
 test("a link opens in a background tab, its article goes to the tablet and the tab is closed", async () => {
-  const sending = listeners.menu({ menuItemId: "send-link", linkUrl: "https://example.com/a" }, { id: 1 });
-  await until(() => listeners.updated);
-  listeners.updated(2, { status: "complete" });
-  await sending;
+  tabStates = [{ status: "loading" }, { status: "loading" }, { status: "complete", url: "https://example.com/a" }];
+  await sendLink();
 
   assert.deepEqual(cloud.uploads.map((u) => u.meta), [{ file_name: "T" }]);
   assert.deepEqual(events, ["open https://example.com/a inactive", "badge 1 …", "read 2", "badge 1 ✓", "close 2"]);
-  assert.deepEqual(listeners["updated filter"], { tabId: 2, properties: ["status"] });
 });
 
-test("a link whose tab is already loaded is sent without waiting", async () => {
-  tabStatus = "complete";
-  await listeners.menu({ menuItemId: "send-link", linkUrl: "https://example.com/a" }, { id: 1 });
+test("the blank page a new tab starts on is not taken for the loaded link", async () => {
+  tabStates = [{ status: "complete" }, { status: "loading" }, { status: "complete", url: "https://example.com/a" }];
+  await sendLink();
 
   assert.equal(cloud.uploads.length, 1);
-  assert.equal(listeners.updated, undefined);
+  assert.equal(events.filter((event) => event === "read 2").length, 1);
+});
+
+test("an article that shows up late, after a redirect or once scripts have run, is waited for", async () => {
+  pages = [NO_ARTICLE, NO_ARTICLE, ARTICLE];
+  await sendLink();
+
+  assert.equal(cloud.uploads.length, 1);
+  assert.equal(events.filter((event) => event === "read 2").length, 3);
+  assert.deepEqual(outcome(), ["open https://example.com/a inactive", "close 2"]);
+});
+
+test("a page that never shows an article is reported after a few tries", async () => {
+  pages = [NO_ARTICLE];
+  await sendLink();
+
+  assert.equal(cloud.uploads.length, 0);
+  assert.ok(events.includes("badge 1 !"));
+  assert.deepEqual(outcome(), ["open https://example.com/a inactive", "notify Aucun article détecté sur cette page.", "close 2"]);
 });
 
 test("a link that never finishes loading is given up after 30 s and its tab is closed", async () => {
-  const sending = listeners.menu({ menuItemId: "send-link", linkUrl: "https://example.com/lent" }, { id: 1 });
-  await until(() => listeners.updated);
-  mock.timers.tick(30000);
-  await sending;
+  tabStates = [{ status: "loading" }];
+  await sendLink("https://example.com/lent");
 
   assert.equal(cloud.uploads.length, 0);
   assert.ok(events.includes("badge 1 !"));
@@ -148,10 +176,43 @@ test("a link that never finishes loading is given up after 30 s and its tab is c
     "notify La page du lien ne s'est pas chargée à temps.",
     "close 2",
   ]);
-  assert.equal(listeners.updated, undefined);
 });
 
-async function until(condition) {
-  for (let i = 0; i < 500 && !condition(); i++) await new Promise((resolve) => setImmediate(resolve));
-  assert.ok(condition(), "never reached the expected state");
+test("a link Firefox refuses to open is reported instead of failing silently", async () => {
+  state.createError = "Illegal URL: file:///etc/hosts";
+  await sendLink("file:///etc/hosts");
+
+  assert.deepEqual(outcome(), ["notify Illegal URL: file:///etc/hosts"]);
+});
+
+test("closing the tab the link was sent from still lets the notification through", async () => {
+  state.folder = { id: "f-sous-jete", path: "Jeté / Sous jeté" };
+  state.closedTabs = [1];
+  await sendLink();
+
+  assert.equal(cloud.uploads.length, 1);
+  assert.deepEqual(outcome(), [
+    "open https://example.com/a inactive",
+    "notify Le dossier « Jeté / Sous jeté » n'existe plus : l'article est à la racine.",
+    "close 2",
+  ]);
+});
+
+test("the link's tab is left open once the reader has switched to it", async () => {
+  tabStates = [{ status: "complete", url: "https://example.com/a", active: true }];
+  await sendLink();
+
+  assert.equal(cloud.uploads.length, 1);
+  assert.ok(!events.includes("close 2"));
+});
+
+async function drive(promise) {
+  let settled = false;
+  const result = promise.finally(() => (settled = true));
+  for (let i = 0; i < 2000 && !settled; i++) {
+    await new Promise((resolve) => setImmediate(resolve));
+    mock.timers.tick(250);
+  }
+  assert.ok(settled, "never settled");
+  return result;
 }
